@@ -1,0 +1,19 @@
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Env
+.env
+.env.*
+
+# Node
+node_modules/
+dist/
+build/
+
+# Vite
+client/.vite/
