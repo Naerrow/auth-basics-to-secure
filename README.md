@@ -70,14 +70,24 @@ Express는 `req.headers`, `Authorization`, `Set-Cookie`, 미들웨어 체인처�
 ````bash
 npm install --prefix client
 npm install --prefix server
-2) 실행
+````
+### 2) 실행
 서버와 클라이언트를 각각 다른 터미널에서 실행합니다.
 
-bash
-코드 복사
+```bash
 npm run dev --prefix server
 npm run dev --prefix client
-3) 접속
+```
+
+#### STAGE 환경변수
+서버는 `STAGE` 환경변수로 현재 구현된 인증 스테이지를 인식합니다. 기본값은 1이며, Stage 1 전용 엔드포인트만 열려 있습니다. 예를 들어 다음처럼 명시적으로 붙이면 해당 실행에서는 `STAGE=1`으로 동작합니다.
+
+```bash
+STAGE=1 npm run dev --prefix server
+```
+
+다른 Stage(예: 향후 `STAGE=2`)나 환경에서 돌릴 때 실수로 Stage 1 전용 라우트가 열리지 않도록 `STAGE` 값을 의도적으로 설정하세요.
+### 3) 접속
 Client: http://localhost:5173
 
 Server: http://localhost:4000
