@@ -1,42 +1,202 @@
-#root {
-  max-width: 1280px;
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+
+.app-shell {
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  background: radial-gradient(circle at top left, #202a52, transparent 45%),
+    radial-gradient(circle at bottom right, #0f172a, transparent 55%),
+    #050714;
+  color: #f8fafc;
+}
+
+.app-layout {
+  max-width: 960px;
   margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.app-heading {
+  text-align: left;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.app-heading h1 {
+  font-size: clamp(2.25rem, 4vw, 2.75rem);
+  margin: 0;
+  font-weight: 600;
+}
+
+.eyebrow {
+  letter-spacing: 0.32em;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+  color: #94a3b8;
+}
+
+.subtitle {
+  margin: 0.25rem 0 0.75rem;
+  color: #cbd5f5;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.status-label {
+  color: #cbd5f5;
+}
+
+.status-pill {
+  padding: 0.15rem 0.85rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  font-weight: 600;
+  color: white;
+  font-size: 0.9rem;
+}
+
+.app-card {
+  border-radius: 1.5rem;
+  padding: 1.75rem;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 30px 60px rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(18px);
+}
+
+.card-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.card-header p {
+  margin: 0.35rem 0 0;
+  color: #cbd5f5;
+  font-size: 0.95rem;
+}
+
+.credential-tip {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(79, 70, 229, 0.35));
+  color: #e0f2fe;
+  font-weight: 500;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.45);
+  font-size: 0.95rem;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin: 1.25rem 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: #cbd5f5;
+}
+
+.field input {
+  border-radius: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  padding: 0.85rem;
+  background: rgba(15, 23, 42, 0.4);
+  color: #f1f5f9;
+  font-size: 1rem;
+  transition: border 0.2s;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.actions button {
+  border-radius: 0.75rem;
+  border: 1px solid transparent;
+  padding: 0.85rem 1.4rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(148, 163, 184, 0.25);
+  color: #eff6ff;
+  transition: transform 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.actions button:hover {
+  border-color: rgba(148, 163, 184, 0.6);
+  transform: translateY(-1px);
+  background: rgba(59, 130, 246, 0.5);
+}
+
+.actions button.primary {
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  border-color: transparent;
+  color: white;
+}
+
+.actions button.primary:hover {
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+}
+
+.quiet {
+  margin-top: 1rem;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.log-card p {
+  margin-bottom: 0;
+}
+
+.log-window {
+  margin-top: 1rem;
+  border-radius: 1rem;
+  background: rgba(2, 6, 23, 0.85);
+  border: 1px solid rgba(226, 232, 240, 0.2);
+  padding: 1rem;
+  min-height: 160px;
+  max-height: 320px;
+  overflow: auto;
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.log-line {
+  margin: 0;
+  color: #e0f2fe;
+  word-break: break-all;
+}
+
+@media (max-width: 600px) {
+  .app-card {
+    padding: 1.25rem;
   }
-  to {
-    transform: rotate(360deg);
+
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
   }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
 }
