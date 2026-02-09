@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { hasToken, login, logout, me } from "./api";
 import "./App.css";
 
@@ -13,22 +13,37 @@ export default function App() {
     setLogs((prev) => [line, ...prev]);
   };
 
-  const tokenLabel = useMemo(
-    () => (tokenState ? "YES (in memory)" : "NO"),
-    [tokenState],
-  );
+  const [expiresAt, setExpiresAt] = useState(null); // epoch ms
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const remainingSec = useMemo(() => {
+    if (!expiresAt) return null;
+    return Math.max(0, Math.floor((expiresAt - now) / 1000));
+  }, [expiresAt, now]);
+
+  const tokenLabel = useMemo(() => {
+    if (!tokenState) return "NO";
+    if (!expiresAt) return "YES (in memory)";
+    if (remainingSec <= 0) return "YES (expired)";
+    return `YES (expires in ${remainingSec}s)`;
+  }, [tokenState, expiresAt, remainingSec]);
 
   return (
     <div className="app-shell">
       <main className="app-layout">
         <header className="app-heading">
-          <p className="eyebrow">1단계 · 액세스 토큰은 메모리에만 저장</p>
+          <p className="eyebrow">2단계 · 액세스 토큰 만료 재현(10초)</p>
           <h1>mini-auth-lab</h1>
           <p className="subtitle">
             서버 http://localhost:4000 · 클라이언트 http://localhost:5173
           </p>
           <div className="status-row">
-            <span className="status-label">액세스 토큰 상태</span>
+            <span className="status-label">액세스 토큰 상태(만료)</span>
+
             <span className="status-pill">{tokenLabel}</span>
           </div>
         </header>
@@ -36,7 +51,11 @@ export default function App() {
         <section className="app-card">
           <div className="card-header">
             <h2>사용자 정보</h2>
-            <p>입력한 정보로 로그인하고, /me와 로그아웃 흐름을 확인하세요.</p>
+            <p>
+              로그인 후 토큰 만료(10초) → /me 401 → 재로그인 필요 흐름을
+              확인하세요.
+            </p>
+
             <p className="credential-tip">테스트 계정 ID : demo · PWD : demo</p>
           </div>
 
@@ -67,6 +86,10 @@ export default function App() {
                 try {
                   const response = await login(username, password);
                   setTokenState(true);
+                  setExpiresAt(
+                    response.expiresAt ??
+                      Date.now() + response.expiresInSec * 1000,
+                  );
                   pushLog(`로그인 성공 · 만료까지 ${response.expiresInSec}초`);
                 } catch (error) {
                   pushLog(`로그인 실패: ${error.message}`);
@@ -82,7 +105,9 @@ export default function App() {
                   const response = await me();
                   pushLog(`/me 조회 성공: ${JSON.stringify(response)}`);
                 } catch (error) {
-                  pushLog(`/me 조회 실패: ${error.message}`);
+                  pushLog(
+                    `/me 조회 실패: ${error.message} (Stage 2: 재로그인 필요)`,
+                  );
                 }
               }}
             >
@@ -94,6 +119,7 @@ export default function App() {
                 try {
                   await logout();
                   setTokenState(false);
+                  setExpiresAt(null);
                   pushLog("로그아웃 성공 · 클라이언트 토큰 제거 완료");
                 } catch (error) {
                   pushLog(`로그아웃 실패: ${error.message}`);
@@ -105,8 +131,8 @@ export default function App() {
           </div>
 
           <p className="quiet">
-            테스트 시나리오: (1) 로그인 전 /me → 401 · (2) 로그인 후 /me → 200 ·
-            (3) 로그아웃 후 /me → 401
+            테스트 시나리오: (1) 로그인 → 만료 카운트다운 확인 · (2) 10초 후 /me
+            → 401 · (3) 다시 로그인 → /me → 200
           </p>
         </section>
 
