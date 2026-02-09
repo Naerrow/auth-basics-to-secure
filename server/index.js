@@ -9,7 +9,7 @@ const PORT = 4000;
 const CLIENT_ORIGIN = "http://localhost:5173";
 const STAGE = Number(process.env.STAGE || 1);
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
-const ACCESS_TTL_SEC = 60 * 5;
+const ACCESS_TTL_SEC = 10;
 
 app.use(
   cors({
@@ -48,24 +48,42 @@ function requireAccess(req, res, next) {
 
 // 로그인 요청을 처리하고 조건을 만족하면 액세스 토큰을 발급합니다.
 app.post("/login", (req, res) => {
-  if (STAGE !== 1)
-    return res
-      .status(400)
-      .json({ message: "현재 설정에서는 이 엔드포인트는 Stage1 전용입니다." });
+  // ✅ Stage 1, 2 모두 로그인 허용
+  if (![1, 2].includes(STAGE)) {
+    return res.status(400).json({
+      message:
+        "현재 설정에서는 이 엔드포인트를 Stage 1~2에서만 사용할 수 있습니다.",
+    });
+  }
 
   const { username, password } = req.body;
   if (username !== "demo" || password !== "demo")
-    return res.status(401).json({ message: "잘못된 인증 정보입니다." });
+    return res
+      .status(401)
+      .json({ message: "아이디 또는 비밀번호가 일치하지 않습니다." });
 
   const accessToken = signAccessToken("user-1");
-  res.json({ accessToken, tokenType: "Bearer", expiresInSec: ACCESS_TTL_SEC });
+
+  // ✅ FE가 타이머 표시하기 쉽도록 expiresAt 추가
+  const expiresAt = Date.now() + ACCESS_TTL_SEC * 1000;
+
+  res.json({
+    accessToken,
+    tokenType: "Bearer",
+    expiresInSec: ACCESS_TTL_SEC,
+    expiresAt,
+  });
 });
 
 // 토큰 인증된 사용자 정보를 돌려줍니다.
 app.get("/me", requireAccess, (req, res) => {
   res.json({
     userId: req.userId,
-    message: "액세스 토큰으로만 인증되었습니다 (Stage 1).",
+    stage: STAGE,
+    message:
+      STAGE === 2
+        ? "액세스 토큰으로만 인증되었습니다 (Stage 2: 만료 재현)."
+        : "액세스 토큰으로만 인증되었습니다 (Stage 1).",
   });
 });
 
