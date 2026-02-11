@@ -1,56 +1,115 @@
 const API_BASE = "http://localhost:4000";
 
-// Stage 1: 액세스 토큰은 새로고침 시 사라지는 메모리 저장 방식
+// Stage 3: Access Token은 메모리, Refresh Token은 HttpOnly Cookie(서버가 Set-Cookie)
 let accessToken = null;
+const tokenListeners = new Set();
 
-// 현재 메모리에 토큰이 있는지 확인(메모리 저장 상태만 가능)
+function notifyTokenChange(payload) {
+  tokenListeners.forEach((listener) => {
+    try {
+      listener(payload);
+    } catch {
+      // ignore listener errors to keep other subscribers running
+    }
+  });
+}
+
 export function hasToken() {
   return !!accessToken;
 }
 
-// 메모리에 보관된 토큰을 지워서 인증 상태를 끔
 export function clearToken() {
   accessToken = null;
+  notifyTokenChange({ accessToken: null, expiresInSec: null, cause: "clear" });
 }
 
-// Authorization 헤더를 구성, 토큰이 없으면 빈 객체 반환
-function getAuthHeaders() {
+function authHeaders() {
   return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 }
 
-// 공통 Fetch 래퍼: JSON 요청/응답 및 에러 처리
-async function request(path, { method = "GET", body } = {}) {
+async function parseJsonSafe(res) {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+// ✅ 공통 요청 함수 (쿠키 포함)
+async function request(path, { method = "GET", body, withAuth = true } = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     method,
+    credentials: "include", // ✅ Stage3 필수(Refresh 쿠키 저장/전송)
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders(),
+      ...(withAuth ? authHeaders() : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.message || `HTTP ${res.status}`);
+  const data = await parseJsonSafe(res);
+  if (!res.ok) {
+    const err = new Error(data?.message || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
+// ✅ Refresh로 Access 재발급
+export async function refreshAccess() {
+  const data = await request("/auth/refresh", {
+    method: "POST",
+    withAuth: false,
+  });
+  accessToken = data.accessToken;
+  notifyTokenChange({
+    accessToken: data.accessToken,
+    expiresInSec: data.expiresInSec,
+    cause: "refresh",
+  });
+  return data;
+}
+
+// ✅ 로그인: Access(JSON) + Refresh(HttpOnly Cookie)
 export async function login(username, password) {
   const data = await request("/login", {
     method: "POST",
     body: { username, password },
+    withAuth: false,
   });
-  // 로그인 성공 시 받은 액세스 토큰을 메모리에 저장
+
   accessToken = data.accessToken;
+  notifyTokenChange({
+    accessToken: data.accessToken,
+    expiresInSec: data.expiresInSec,
+    cause: "login",
+  });
   return data;
 }
 
+// ✅ 보호 API 호출: 401이면 refresh 시도 후 1회 재시도
 export async function me() {
-  // 현재 토큰으로 /me를 호출하면 인증된 사용자 정보를 가져옴
-  return request("/me");
+  try {
+    return await request("/me");
+  } catch (e) {
+    if (e.status !== 401) throw e;
+
+    // access 만료/없음 → refresh 시도
+    await refreshAccess();
+
+    // refresh 성공 → 원래 요청 재시도(딱 1번)
+    return await request("/me");
+  }
 }
 
 export async function logout() {
-  // 서버 로그아웃 호출 후 클라이언트 토큰을 제거해 인증 상태 초기화
-  await request("/logout", { method: "POST" });
+  // 서버가 refresh 쿠키 삭제/폐기
+  await request("/logout", { method: "POST", withAuth: false });
   clearToken();
+}
+
+export function subscribeTokenChange(listener) {
+  tokenListeners.add(listener);
+  return () => tokenListeners.delete(listener);
 }
