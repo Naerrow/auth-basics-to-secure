@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { hasToken, login, logout, me, subscribeTokenChange } from "./api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  hasToken,
+  login,
+  logout,
+  me,
+  refreshAccess,
+  subscribeTokenChange,
+} from "./api";
 import "./App.css";
 
 export default function App() {
@@ -9,6 +16,8 @@ export default function App() {
   const [tokenState, setTokenState] = useState(hasToken());
   const [refreshCount, setRefreshCount] = useState(0);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [initializing, setInitializing] = useState(true);
+  const [sessionStatus, setSessionStatus] = useState("세션 복원 대기");
 
   const pushLog = useCallback((msg) => {
     const line = `${new Date().toLocaleTimeString()}  ${msg}`;
@@ -39,8 +48,15 @@ export default function App() {
     const formattedTime = lastRefresh
       ? new Date(lastRefresh).toLocaleTimeString()
       : "알 수 없음";
-    return `자동 갱신 ${refreshCount}회 · 마지막 ${formattedTime}`;
+    return `마지막 자동 갱신 시간 : ${formattedTime}`;
   }, [refreshCount, lastRefresh]);
+
+  const sessionLabel = useMemo(() => {
+    if (initializing) return "세션 복원 중...";
+    return sessionStatus;
+  }, [initializing, sessionStatus]);
+
+  const restoringRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = subscribeTokenChange((info) => {
@@ -53,7 +69,9 @@ export default function App() {
       }
 
       if (info.cause === "refresh") {
+        if (restoringRef.current) return;
         setRefreshCount((prev) => prev + 1);
+        console.log("refresh count", refreshCount);
         setLastRefresh(Date.now());
         pushLog(
           `Access 자동 갱신: ${info.expiresInSec ?? "unknown"}초 · 새 토큰 사용`,
@@ -67,6 +85,35 @@ export default function App() {
       }
     });
     return unsubscribe;
+  }, [pushLog]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const restoreSession = async () => {
+      setInitializing(true);
+      setSessionStatus("세션 복원 시도 중...");
+      restoringRef.current = true;
+      try {
+        await refreshAccess();
+        if (cancelled) return;
+        setSessionStatus("Refresh 쿠키로 자동 복원됨");
+        setRefreshCount((prev) => prev + 1);
+        setLastRefresh(Date.now());
+        pushLog("세션 복원 성공: Refresh 쿠키로 Access 재발급");
+      } catch (error) {
+        if (cancelled) return;
+        setSessionStatus("세션 복원 실패 · 로그인 필요");
+        pushLog(`세션 복원 실패: ${error?.message ?? "Refresh 실패"}`);
+      } finally {
+        restoringRef.current = false;
+        if (!cancelled) setInitializing(false);
+      }
+    };
+
+    restoreSession();
+    return () => {
+      cancelled = true;
+    };
   }, [pushLog]);
 
   return (
@@ -86,6 +133,10 @@ export default function App() {
           <div className="status-row">
             <span className="status-label">자동 갱신 현황</span>
             <span className="status-pill">{refreshLabel}</span>
+          </div>
+          <div className="status-row">
+            <span className="status-label">세션 복원 상태</span>
+            <span className="status-pill">{sessionLabel}</span>
           </div>
         </header>
 
@@ -131,6 +182,8 @@ export default function App() {
                     response.expiresAt ??
                       Date.now() + response.expiresInSec * 1000,
                   );
+                  setSessionStatus("직접 로그인됨");
+                  setInitializing(false);
                   pushLog(`로그인 성공 · 만료까지 ${response.expiresInSec}초`);
                 } catch (error) {
                   pushLog(`로그인 실패: ${error.message}`);
@@ -159,6 +212,8 @@ export default function App() {
                   await logout();
                   setTokenState(false);
                   setExpiresAt(null);
+                  setSessionStatus("세션 없음");
+                  setInitializing(false);
                   pushLog("로그아웃 성공 · 클라이언트 토큰 제거 완료");
                 } catch (error) {
                   pushLog(`로그아웃 실패: ${error.message}`);
