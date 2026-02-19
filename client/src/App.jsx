@@ -225,8 +225,8 @@ export default function App() {
           </div>
 
           <p className="quiet">
-            테스트 시나리오: (1) 로그인 → 만료 카운트다운 확인 · (2) 10초 후 /me
-            · (3) refresh 토큰으로 새로 access 토큰 발급
+            테스트 시나리오: (1) 로그인 후 Access 만료까지 기다림 · (2) 콘솔/버튼을 여러 번 눌러
+            /me를 동시 호출(401 유발) · (3) 자동 갱신 로그가 1회만 찍히고 전체 요청이 200이 되는지 확인
           </p>
         </section>
 

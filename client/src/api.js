@@ -3,6 +3,8 @@ const API_BASE = "http://localhost:4000";
 // Stage 3: Access Token은 메모리, Refresh Token은 HttpOnly Cookie(서버가 Set-Cookie)
 let accessToken = null;
 const tokenListeners = new Set();
+let refreshPromise = null;
+let tokenVersion = 0;
 
 function notifyTokenChange(payload) {
   tokenListeners.forEach((listener) => {
@@ -20,6 +22,7 @@ export function hasToken() {
 
 export function clearToken() {
   accessToken = null;
+  tokenVersion++;
   notifyTokenChange({ accessToken: null, expiresInSec: null, cause: "clear" });
 }
 
@@ -58,17 +61,24 @@ async function request(path, { method = "GET", body, withAuth = true } = {}) {
 
 // ✅ Refresh로 Access 재발급
 export async function refreshAccess() {
-  const data = await request("/auth/refresh", {
-    method: "POST",
-    withAuth: false,
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const data = await request("/auth/refresh", {
+      method: "POST",
+      withAuth: false,
+    });
+    accessToken = data.accessToken;
+    tokenVersion++;
+    notifyTokenChange({
+      accessToken: data.accessToken,
+      expiresInSec: data.expiresInSec,
+      cause: "refresh",
+    });
+    return data;
+  })().finally(() => {
+    refreshPromise = null;
   });
-  accessToken = data.accessToken;
-  notifyTokenChange({
-    accessToken: data.accessToken,
-    expiresInSec: data.expiresInSec,
-    cause: "refresh",
-  });
-  return data;
+  return refreshPromise;
 }
 
 // ✅ 로그인: Access(JSON) + Refresh(HttpOnly Cookie)
@@ -80,6 +90,7 @@ export async function login(username, password) {
   });
 
   accessToken = data.accessToken;
+  tokenVersion++;
   notifyTokenChange({
     accessToken: data.accessToken,
     expiresInSec: data.expiresInSec,
@@ -90,13 +101,17 @@ export async function login(username, password) {
 
 // ✅ 보호 API 호출: 401이면 refresh 시도 후 1회 재시도
 export async function me() {
+  const startVersion = tokenVersion;
   try {
     return await request("/me");
   } catch (e) {
     if (e.status !== 401) throw e;
 
-    // access 만료/없음 → refresh 시도
-    await refreshAccess();
+    // 이미 다른 요청에서 refresh로 토큰이 갱신된 경우, refresh 없이 재시도
+    if (tokenVersion === startVersion) {
+      // access 만료/없음 → refresh 시도(동시성 제어)
+      await refreshAccess();
+    }
 
     // refresh 성공 → 원래 요청 재시도(딱 1번)
     return await request("/me");
