@@ -1,4 +1,5 @@
 const API_BASE = "http://localhost:4000";
+const CSRF_COOKIE_NAME = "csrf_token";
 
 // Stage 3: Access Token은 메모리, Refresh Token은 HttpOnly Cookie(서버가 Set-Cookie)
 let accessToken = null;
@@ -30,6 +31,22 @@ function authHeaders() {
   return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 }
 
+function getCookie(name) {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie
+    .split("; ")
+    .find((part) => part.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.split("=").slice(1).join("=")) : null;
+}
+
+async function ensureCsrfToken() {
+  if (getCookie(CSRF_COOKIE_NAME)) return;
+  await fetch(`${API_BASE}/auth/csrf`, {
+    method: "GET",
+    credentials: "include",
+  });
+}
+
 async function parseJsonSafe(res) {
   try {
     return await res.json();
@@ -40,11 +57,17 @@ async function parseJsonSafe(res) {
 
 // ✅ 공통 요청 함수 (쿠키 포함)
 async function request(path, { method = "GET", body, withAuth = true } = {}) {
+  if (path !== "/auth/csrf") {
+    await ensureCsrfToken();
+  }
+
+  const csrfToken = getCookie(CSRF_COOKIE_NAME);
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     credentials: "include", // ✅ Stage3 필수(Refresh 쿠키 저장/전송)
     headers: {
       "Content-Type": "application/json",
+      ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
       ...(withAuth ? authHeaders() : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
