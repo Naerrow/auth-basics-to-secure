@@ -40,8 +40,10 @@ const csrfCookieOptions = {
 };
 
 // Stage3: refresh 토큰을 서버가 "세션처럼" 관리하기 위한 인메모리 저장소
-// (Stage7에서 rotation/재사용 감지로 확장할 부분)
-const refreshStore = new Map(); // key: jti, value: { userId, expiresAt }
+// Stage7: rotation/재사용 감지 지원
+const refreshStore = new Map(); // key: jti, value: { userId, expiresAt, familyId, used }
+const SESSION_MAX_TTL_SEC = 30; // 30초: 절대 만료(세션 최대 수명)
+const refreshFamilies = new Map(); // key: familyId, value: { jtis: Set<jti>, expiresAt }
 
 app.use(
   cors({
@@ -106,17 +108,59 @@ function signAccessToken(userId) {
   });
 }
 
+function ensureFamilySet(familyId, expiresAt = null) {
+  let record = refreshFamilies.get(familyId);
+  if (!record) {
+    record = {
+      jtis: new Set(),
+      expiresAt: expiresAt ?? Date.now() + SESSION_MAX_TTL_SEC * 1000,
+    };
+    refreshFamilies.set(familyId, record);
+  }
+  return record;
+}
+
+function revokeFamily(familyId) {
+  const record = refreshFamilies.get(familyId);
+  if (!record) return;
+  for (const jti of record.jtis) {
+    refreshStore.delete(jti);
+  }
+  refreshFamilies.delete(familyId);
+}
+
+function revokeRefreshToken(jti) {
+  const record = refreshStore.get(jti);
+  if (!record) return;
+  refreshStore.delete(jti);
+  if (record.familyId) {
+    const family = refreshFamilies.get(record.familyId);
+    if (family) {
+      family.jtis.delete(jti);
+      if (family.jtis.size === 0) refreshFamilies.delete(record.familyId);
+    }
+  }
+}
+
 // Refresh Token 생성(서버 저장소에 jti 기록)
-function signRefreshToken(userId) {
+function signRefreshToken(userId, familyId = null) {
   const jti = crypto.randomUUID();
-  const token = jwt.sign({ sub: userId, typ: "refresh", jti }, JWT_SECRET, {
+  const payload = { sub: userId, typ: "refresh", jti };
+  if (familyId) payload.fid = familyId;
+  const token = jwt.sign(payload, JWT_SECRET, {
     expiresIn: REFRESH_TTL_SEC,
   });
 
   refreshStore.set(jti, {
     userId,
     expiresAt: Date.now() + REFRESH_TTL_SEC * 1000,
+    familyId,
+    used: false,
   });
+
+  if (familyId) {
+    ensureFamilySet(familyId).jtis.add(jti);
+  }
 
   return { token, jti };
 }
@@ -156,16 +200,35 @@ function verifyRefreshFromCookie(req) {
 
   // (인메모리 만료 체크 — jwt 만료 외 추가 방어)
   if (record.expiresAt < Date.now()) {
-    refreshStore.delete(payload.jti);
+    revokeRefreshToken(payload.jti);
     throw new Error("만료된 Refresh 토큰입니다.");
   }
 
-  return { userId: payload.sub, jti: payload.jti };
+  if (STAGE >= 7) {
+    if (record.familyId) {
+      const family = refreshFamilies.get(record.familyId);
+      if (!family || family.expiresAt < Date.now()) {
+        if (record.familyId) revokeFamily(record.familyId);
+        throw new Error("세션이 만료되었습니다. 다시 로그인 해주세요.");
+      }
+    }
+    if (record.used) {
+      // 재사용 감지 시 패밀리 전체 폐기
+      if (record.familyId) revokeFamily(record.familyId);
+      throw new Error("Refresh 토큰 재사용이 감지되었습니다.");
+    }
+    if (record.familyId && payload.fid !== record.familyId) {
+      if (record.familyId) revokeFamily(record.familyId);
+      throw new Error("Refresh 토큰 무결성 검증 실패");
+    }
+  }
+
+  return { userId: payload.sub, jti: payload.jti, familyId: record.familyId };
 }
 
 // 로그인: Stage 1~3에서 모두 가능 (Stage3에서 refresh 쿠키 발급)
 app.post("/login", (req, res) => {
-  if (![1, 2, 3, 4, 5, 6].includes(STAGE)) {
+  if (![1, 2, 3, 4, 5, 6, 7].includes(STAGE)) {
     return res.status(400).json({
       message:
         "현재 설정에서는 이 엔드포인트를 Stage 1~3에서만 사용할 수 있습니다.",
@@ -182,9 +245,13 @@ app.post("/login", (req, res) => {
   const userId = "user-1";
   const accessToken = signAccessToken(userId);
 
-  // ✅ Stage3: refresh 쿠키 발급
+  // ✅ Stage3: refresh 쿠키 발급 (Stage7: 패밀리 생성 + 절대 만료)
   if (STAGE >= 3) {
-    const { token: refreshToken } = signRefreshToken(userId);
+    const familyId = STAGE >= 7 ? crypto.randomUUID() : null;
+    if (STAGE >= 7 && familyId) {
+      ensureFamilySet(familyId, Date.now() + SESSION_MAX_TTL_SEC * 1000);
+    }
+    const { token: refreshToken } = signRefreshToken(userId, familyId);
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions);
   }
   // ✅ Stage6: CSRF 쿠키 발급
@@ -213,8 +280,15 @@ app.post("/auth/refresh", (req, res) => {
   }
 
   try {
-    const { userId } = verifyRefreshFromCookie(req);
+    const { userId, jti, familyId } = verifyRefreshFromCookie(req);
     const newAccessToken = signAccessToken(userId);
+    if (STAGE >= 7) {
+      // rotation: 기존 토큰 사용 처리 + 새 토큰 발급
+      const record = refreshStore.get(jti);
+      if (record) record.used = true;
+      const { token: nextRefreshToken } = signRefreshToken(userId, familyId);
+      res.cookie(REFRESH_COOKIE_NAME, nextRefreshToken, refreshCookieOptions);
+    }
     if (STAGE >= 6) {
       issueCsrfToken(res);
     }
@@ -246,8 +320,12 @@ app.get("/me", requireAccess, (req, res) => {
 app.post("/logout", (req, res) => {
   if (STAGE >= 3) {
     try {
-      const { jti } = verifyRefreshFromCookie(req);
-      refreshStore.delete(jti);
+      const { jti, familyId } = verifyRefreshFromCookie(req);
+      if (STAGE >= 7 && familyId) {
+        revokeFamily(familyId);
+      } else {
+        revokeRefreshToken(jti);
+      }
     } catch {
       // 쿠키가 없거나 검증 실패여도, 클라이언트 입장에선 로그아웃 처리 가능
     }
