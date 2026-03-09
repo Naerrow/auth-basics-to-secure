@@ -224,10 +224,18 @@ export default function App() {
             </button>
           </div>
 
-          <p className="quiet">
-            테스트 시나리오: (1) 로그인 후 Access 만료까지 기다림 · (2) 콘솔/버튼을 여러 번 눌러
-            /me를 동시 호출(401 유발) · (3) 자동 갱신 로그가 1회만 찍히고 전체 요청이 200이 되는지 확인
-          </p>
+          <div className="quiet">
+            <p>테스트 시나리오</p>
+            <ol>
+              <li>브라우저 A(일반), 브라우저 B(시크릿/다른 브라우저)에서 각각 로그인 페이지를 엽니다.</li>
+              <li>A에서 demo/demo 로그인 후 `/me` 호출 → 200 확인</li>
+              <li>B에서 동일 계정으로 로그인 후 `/me` 호출 → 200 확인</li>
+              <li>A로 돌아와 바로 `/me` 호출(1~2회) → 액세스가 유효하면 잠깐 200이 나올 수 있음</li>
+              <li>A에서 10초 정도 기다린 뒤 `/me` 호출 → 401이 되어야 함</li>
+              <li>A에서 바로 `/auth/refresh` 호출 → 실패(401)여야 함 (Stage 8에서 기존 패밀리 폐기됨)</li>
+              <li>B에서 `/auth/refresh` 호출 → 성공(200)이어야 함</li>
+            </ol>
+          </div>
         </section>
 
         <section className="app-card log-card">
